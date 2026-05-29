@@ -1,0 +1,136 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentMarket API",
+    "description": "Real-time market data API with x402 micropayments. Provides stock quotes, market indices, and institutional SEC 13F holdings data.",
+    "version": "1.0.0",
+    "contact": { "name": "AgentMarket", "url": "https://market.memoryapi.org" }
+  },
+  "servers": [
+    { "url": "https://market.memoryapi.org", "description": "Production" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "healthCheck",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service health",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "status": { "type": "string" }, "service": { "type": "string" }, "port": { "type": "integer" } } } } }
+          }
+        }
+      }
+    },
+    "/x402/market/quote": {
+      "get": {
+        "summary": "Stock price quotes",
+        "description": "Real-time stock price quotes for one or more ticker symbols. Returns price, % change, 52-week high/low. Costs $0.001 per request.",
+        "operationId": "getStockQuotes",
+        "x-price": "$0.001",
+        "parameters": [
+          { "name": "symbols", "in": "query", "description": "Comma-separated ticker symbols", "schema": { "type": "string", "default": "AAPL,MSFT,NVDA,GOOGL,TSLA" } },
+          { "name": "exchange", "in": "query", "description": "Filter by exchange: NYSE or NASDAQ", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stock quotes",
+            "content": { "application/json": { "schema": { "type": "object", "properties": {
+              "success": { "type": "boolean" },
+              "count": { "type": "integer" },
+              "quotes": { "type": "array", "items": { "type": "object", "properties": {
+                "symbol": { "type": "string" }, "name": { "type": "string" }, "price": { "type": "number" },
+                "change_pct": { "type": "number" }, "high_52w": { "type": "number" }, "low_52w": { "type": "number" },
+                "exchange": { "type": "string" }, "currency": { "type": "string" }
+              }}},
+              "as_of": { "type": "string", "format": "date-time" },
+              "source": { "type": "string" }
+            }}}}
+          },
+          "402": { "description": "Payment required" }
+        }
+      }
+    },
+    "/x402/market/indices": {
+      "get": {
+        "summary": "Market indices and macro indicators",
+        "description": "Major market indices and macro indicators from FRED: S&P 500, NASDAQ, VIX, 10-Year Treasury, WTI Oil, Gold, USD/EUR. Costs $0.001 per request.",
+        "operationId": "getMarketIndices",
+        "x-price": "$0.001",
+        "responses": {
+          "200": {
+            "description": "Market indices",
+            "content": { "application/json": { "schema": { "type": "object", "properties": {
+              "success": { "type": "boolean" },
+              "as_of": { "type": "string", "format": "date-time" },
+              "indices": { "type": "object", "properties": {
+                "sp500": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "vix": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "nasdaq": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "treasury_10y": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "oil_wti": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "gold": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } },
+                "usd_eur": { "type": "object", "properties": { "value": { "type": "number" }, "date": { "type": "string" } } }
+              }},
+              "source": { "type": "string" }
+            }}}}
+          },
+          "402": { "description": "Payment required" }
+        }
+      }
+    },
+    "/x402/market/holdings": {
+      "get": {
+        "summary": "Institutional 13F holdings",
+        "description": "SEC EDGAR Form 13F institutional holdings. Look up any institution by CIK or name. Costs $0.005 per request.",
+        "operationId": "getInstitutionalHoldings",
+        "x-price": "$0.005",
+        "parameters": [
+          { "name": "cik", "in": "query", "description": "SEC CIK number (default: 0001067983 for Berkshire Hathaway)", "schema": { "type": "string", "default": "0001067983" } },
+          { "name": "institution", "in": "query", "description": "Institution name to search", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Institutional holdings info",
+            "content": { "application/json": { "schema": { "type": "object", "properties": {
+              "success": { "type": "boolean" },
+              "institution_name": { "type": "string" },
+              "cik": { "type": "string" },
+              "latest_13f_date": { "type": "string" },
+              "filing_url": { "type": "string" },
+              "filing_doc_url": { "type": "string" },
+              "accession_number": { "type": "string" },
+              "source": { "type": "string" }
+            }}}}
+          },
+          "402": { "description": "Payment required" }
+        }
+      }
+    },
+    "/mcp": {
+      "get": {
+        "summary": "MCP server info",
+        "operationId": "mcpInfo",
+        "security": [],
+        "responses": { "200": { "description": "MCP server info and available tools" } }
+      },
+      "post": {
+        "summary": "MCP JSON-RPC endpoint",
+        "description": "Model Context Protocol endpoint. Supports: initialize, tools/list, tools/call (get_stock_quotes, get_market_indices, get_institutional_holdings).",
+        "operationId": "mcpRpc",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "type": "object", "properties": {
+            "jsonrpc": { "type": "string", "example": "2.0" },
+            "method": { "type": "string", "example": "tools/call" },
+            "params": { "type": "object" },
+            "id": { "type": "integer" }
+          }}}}
+        },
+        "responses": { "200": { "description": "JSON-RPC response" } }
+      }
+    }
+  }
+}
