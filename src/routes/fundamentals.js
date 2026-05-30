@@ -2,97 +2,68 @@ const express = require('express');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const router = express.Router();
-
 const cache = new NodeCache({ stdTTL: 86400 });
+const SEC_HEADERS = { 'User-Agent': 'memoryapi.org contact@memoryapi.org' };
 
-// Helper: pad CIK to 10 digits with leading zeros
-const padCIK = (cik) => String(cik).padStart(10, '0');
+let tickerCache = null;
+
+async function getCIK(ticker) {
+  if (!tickerCache) {
+    const { data } = await axios.get('https://www.sec.gov/files/company_tickers.json', { headers: SEC_HEADERS, timeout: 15000 });
+    tickerCache = {};
+    Object.values(data).forEach(r => { tickerCache[r.ticker.toUpperCase()] = { cik: r.cik_str, name: r.title }; });
+  }
+  return tickerCache[ticker.toUpperCase()];
+}
+
+function getLatestValue(facts, metric) {
+  const unit = facts?.[metric];
+  if (!unit) return null;
+  const vals = unit?.units ? Object.values(unit.units)[0] : null;
+  if (!vals) return null;
+  const recent = vals.filter(v => v.form && (v.form.includes('10-K') || v.form.includes('10-Q')))
+    .sort((a, b) => new Date(b.end) - new Date(a.end));
+  if (!recent.length) return null;
+  return { value: recent[0].val, period: recent[0].end, form: recent[0].form };
+}
 
 router.get('/', async (req, res) => {
   try {
-    const ticker = (req.query.ticker || 'AAPL').toUpperCase();
+    let { ticker = 'AAPL' } = req.query;
+    ticker = ticker.toUpperCase();
     const cacheKey = `fundamentals:${ticker}`;
     const cached = cache.get(cacheKey);
     if (cached) return res.json(cached);
 
-    // Step 1: Lookup CIK by ticker
-    const searchUrl = `https://efts.sec.gov/LATEST/search-index?q=%22${ticker}%22&forms=10-K`;
-    const searchRes = await axios.get(searchUrl, { timeout: 15000 });
-    
-    // Parse the search response to find entityId (CIK)
-    let cik;
-    if (searchRes.data?.hits?.hits?.length > 0) {
-      const firstHit = searchRes.data.hits.hits[0];
-      cik = firstHit._source?.entity_id || firstHit.fields?.entity_id?.[0];
-    }
-    
-    if (!cik) {
-      return res.status(404).json({ success: false, error: `Company with ticker ${ticker} not found` });
-    }
+    const company = await getCIK(ticker);
+    if (!company) return res.status(404).json({ success: false, error: `Company with ticker ${ticker} not found` });
 
-    const paddedCIK = padCIK(cik);
+    const cikPadded = String(company.cik).padStart(10, '0');
+    const { data: facts } = await axios.get(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cikPadded}.json`, { headers: SEC_HEADERS, timeout: 20000 });
 
-    // Step 2: Fetch company facts from SEC EDGAR XBRL
-    const factsUrl = `https://data.sec.gov/api/xbrl/companyfacts/CIK${paddedCIK}.json`;
-    const factsRes = await axios.get(factsUrl, { timeout: 15000 });
-    const facts = factsRes.data;
-
-    const companyName = facts.entityName || 'Unknown';
-    const fiscalYearEnd = facts.facts?.['us-gaap']?.FiscalYearFocus?.[0]?.val || null;
-
-    // Extract financial metrics - find most recent 10-K or 10-Q value
-    const getMetricValue = (factObj) => {
-      if (!factObj) return null;
-      const unitValues = factObj.units?.USD || [];
-      const values = unitValues.filter(v => v.form && (v.form.includes('10-K') || v.form.includes('10-Q')));
-      if (values.length === 0) return null;
-      // Sort by filed date descending and take the most recent
-      values.sort((a, b) => new Date(b.filed) - new Date(a.filed));
-      return {
-        value: values[0].val,
-        filed: values[0].filed,
-        period: values[0].end,
-        form: values[0].form
-      };
-    };
-
-    const revenue = getMetricValue(facts.facts?.['us-gaap']?.Revenues || facts.facts?.['us-gaap']?.RevenueFromContractWithCustomerExcludingAssessedTax);
-    const netIncome = getMetricValue(facts.facts?.['us-gaap']?.NetIncomeLoss);
-    const eps = getMetricValue(facts.facts?.['us-gaap']?.EarningsPerShareBasic);
-    const assets = getMetricValue(facts.facts?.['us-gaap']?.Assets);
-    const liabilities = getMetricValue(facts.facts?.['us-gaap']?.Liabilities);
-    
-    // Calculate equity = Assets - Liabilities
-    let equity = null;
-    if (assets && liabilities) {
-      equity = {
-        value: assets.value - liabilities.value,
-        filed: assets.filed,
-        period: assets.period
-      };
-    }
+    const usgaap = facts.facts?.['us-gaap'] || {};
+    const revenue = getLatestValue(usgaap, 'Revenues') || getLatestValue(usgaap, 'RevenueFromContractWithCustomerExcludingAssessedTax') || getLatestValue(usgaap, 'SalesRevenueNet');
+    const netIncome = getLatestValue(usgaap, 'NetIncomeLoss');
+    const eps = getLatestValue(usgaap, 'EarningsPerShareBasic');
+    const assets = getLatestValue(usgaap, 'Assets');
+    const liabilities = getLatestValue(usgaap, 'Liabilities');
 
     const result = {
-      success: true,
-      ticker,
-      company_name: companyName,
-      cik: cik.toString(),
-      fiscal_year_end: fiscalYearEnd,
+      success: true, ticker, company_name: company.name, cik: company.cik,
       metrics: {
-        revenue: revenue ? { value: revenue.value, filed: revenue.filed, period: revenue.period, form: revenue.form } : null,
-        net_income: netIncome ? { value: netIncome.value, filed: netIncome.filed, period: netIncome.period, form: netIncome.form } : null,
-        eps: eps ? { value: eps.value, filed: eps.filed, period: eps.period, form: eps.form } : null,
-        total_assets: assets ? { value: assets.value, filed: assets.filed, period: assets.period, form: assets.form } : null,
-        total_liabilities: liabilities ? { value: liabilities.value, filed: liabilities.filed, period: liabilities.period, form: liabilities.form } : null,
-        equity: equity
+        revenue: revenue ? { value: revenue.value, period: revenue.period, form: revenue.form } : null,
+        net_income: netIncome ? { value: netIncome.value, period: netIncome.period } : null,
+        eps: eps ? { value: eps.value, period: eps.period } : null,
+        total_assets: assets ? { value: assets.value, period: assets.period } : null,
+        total_liabilities: liabilities ? { value: liabilities.value, period: liabilities.period } : null,
+        equity: (assets && liabilities) ? { value: assets.value - liabilities.value, period: assets.period } : null
       },
-      source: 'SEC EDGAR XBRL'
+      source: 'SEC EDGAR XBRL',
+      disclaimer: 'Information only. Verify on sec.gov before any action.'
     };
-
     cache.set(cacheKey, result);
     res.json(result);
   } catch (err) {
-    console.error('Fundamentals error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
