@@ -13,6 +13,7 @@ const fundamentalsRouter = require('./routes/fundamentals');
 const sentimentRouter = require('./routes/sentiment');
 const earningsRouter = require('./routes/earnings');
 const fxRouter = require('./routes/fx');
+const preipoRouter = require('./routes/preipo');
 const mcpRouter = require('./routes/mcp');
 
 const app = express();
@@ -135,6 +136,17 @@ try {
         }}}
       },
 
+      'GET /x402/market/preipo': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Pre-IPO and private company token prices — SpaceX, OpenAI, and other unicorns trading as tokenized assets via CoinGecko.',
+        extensions: { bazaar: { info: {
+          description: 'Pre-IPO token prices for private unicorn companies (SpaceX, OpenAI, etc.) trading as synthetic crypto assets.',
+          input: { type: 'http', method: 'GET', queryParams: { company: 'all', limit: '10' },
+            schema: { properties: { company: { type: 'string', description: 'spacex|openai|all' }, limit: { type: 'string' } }, required: [] } },
+          output: { example: { success: true, tokens: [{ name: 'SpaceX (Republic Pre-IPO)', price_usd: 892.29, price_change_24h_pct: 0.5 }] } }
+        }}}
+      },
+
       'GET /x402/market/fx': {
         accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
         description: 'Currency exchange rates USD vs major currencies. Historical rates from FRED (St. Louis Federal Reserve).',
@@ -167,6 +179,7 @@ app.use('/x402/market/holdings', holdingsRouter);
 app.use('/x402/market/fundamentals', fundamentalsRouter);
 app.use('/x402/market/sentiment', sentimentRouter);
 app.use('/x402/market/earnings', earningsRouter);
+app.use('/x402/market/preipo', preipoRouter);
 app.use('/x402/market/fx', fxRouter);
 
 app.listen(PORT, () => console.log(`AgentMarket running on port ${PORT}`));
