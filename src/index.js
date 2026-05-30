@@ -16,6 +16,9 @@ const fxRouter = require('./routes/fx');
 const preipoRouter = require('./routes/preipo');
 const tokenizedRouter = require('./routes/tokenized');
 const arbitrageRouter = require('./routes/arbitrage');
+const cexArbRouter = require('./routes/cex_arb');
+const stablecoinsRouter = require('./routes/stablecoins');
+const fundingRouter = require('./routes/funding');
 const mcpRouter = require('./routes/mcp');
 
 const app = express();
@@ -189,6 +192,49 @@ try {
           input: { type: 'http', method: 'GET', queryParams: {}, schema: { properties: {}, required: [] } },
           output: { example: { success: true, as_of: '2025-01-02T18:00:00Z', pairs: [{ token_symbol: 'XNVDA', token_name: 'NVIDIA xStock', token_price_usd: 143.25, stock_ticker: 'NVDA', stock_price_usd: 143.10, premium_pct: 0.10, spread_usd: 0.15, signal: 'FAIR_VALUE', note: 'Tokenized asset may trade at premium/discount due to liquidity, fees, or market structure' }], disclaimer: 'Not financial advice. Spreads may reflect fees, liquidity differences, or fractional denomination.', source: 'CoinGecko + Twelve Data' } }
         }}}
+      },
+
+      'GET /x402/market/cex_arb': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Cross-exchange cryptocurrency arbitrage opportunities. Find best buy/sell prices across major exchanges.',
+        extensions: { bazaar: { info: {
+          description: 'Cross-exchange crypto arbitrage from CoinGecko. Identifies price spreads for crypto assets across major exchanges (Binance, Coinbase, Kraken, etc.) for USD/USDT/USDC pairs.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { coin: 'bitcoin', coins: 'bitcoin,ethereum,solana', limit: '10' },
+            schema: { properties: {
+              coin: { type: 'string', description: 'Single coin to analyze (default: bitcoin)' },
+              coins: { type: 'string', description: 'Comma-separated list for multiple coins (e.g. bitcoin,ethereum,solana)' },
+              limit: { type: 'integer', description: 'Max exchanges to return (default: 10, max: 50)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, coin: 'bitcoin', as_of: '2025-01-02T18:00:00Z', best_buy: { exchange: 'Kraken', price: 42300.50 }, best_sell: { exchange: 'Binance', price: 42600.75 }, spread_pct: 0.7102, spread_usd: 300.25, signal: 'ARBITRAGE', all_exchanges: [{ name: 'Binance', price: 42600.75, target_currency: 'USDT' }], source: 'CoinGecko' } }
+        }}}
+      },
+
+      'GET /x402/market/stablecoins': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Stablecoin peg monitoring. Track deviations from $1.00 USD peg for major stablecoins.',
+        extensions: { bazaar: { info: {
+          description: 'Monitor stablecoin peg health. Tracks USDC, USDT, DAI, FRAX, TUSD, USDD, PYUSD, and others. Alerts when deviations exceed 0.1% (DE_PEGGED) or 0.05% (WATCH).',
+          input: { type: 'http', method: 'GET', queryParams: {}, schema: { properties: {}, required: [] } },
+          output: { example: { success: true, as_of: '2025-01-02T18:00:00Z', alert_count: 0, stablecoins: [{ symbol: 'USDC', price_usd: 0.9998, peg_deviation_pct: -0.02, status: 'STABLE', change_24h_pct: 0.01, market_cap_usd: 34500000000 }], source: 'CoinGecko' } }
+        }}}
+      },
+
+      'GET /x402/market/funding': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Perpetual futures funding rates. Monitor long/short crowding and market sentiment across major exchanges.',
+        extensions: { bazaar: { info: {
+          description: 'Perpetual futures funding rates from Gate.io. Identifies crowded positions: positive rates signal SHORT crowding (bearish), negative rates signal LONG crowding (bullish). Includes annualized rate calculations.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { limit: '20', sort: 'abs_desc' },
+            schema: { properties: {
+              limit: { type: 'integer', description: 'Number of results (default: 20, max: 100)' },
+              sort: { type: 'string', description: 'Sort order: rate_desc (most positive), rate_asc (most negative), abs_desc (most extreme)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, as_of: '2025-01-02T18:00:00Z', top_positive: [{ symbol: 'BTC_USDT', funding_rate_pct: 0.015, annualized_pct: 16.43, signal: 'BEARISH/SHORT_CROWDED' }], top_negative: [], all_rates: [{ symbol: 'BTC_USDT', funding_rate_pct: 0.015, annualized_pct: 16.43, signal: 'BEARISH/SHORT_CROWDED' }], source: 'Gate.io' } }
+        }}}
       }
     },
     x402Server,
@@ -211,5 +257,8 @@ app.use('/x402/market/preipo', preipoRouter);
 app.use('/x402/market/fx', fxRouter);
 app.use('/x402/market/tokenized', tokenizedRouter);
 app.use('/x402/market/arbitrage', arbitrageRouter);
+app.use('/x402/market/cex_arb', cexArbRouter);
+app.use('/x402/market/stablecoins', stablecoinsRouter);
+app.use('/x402/market/funding', fundingRouter);
 
 app.listen(PORT, () => console.log(`AgentMarket running on port ${PORT}`));
