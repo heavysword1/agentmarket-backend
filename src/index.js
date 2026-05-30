@@ -14,6 +14,8 @@ const sentimentRouter = require('./routes/sentiment');
 const earningsRouter = require('./routes/earnings');
 const fxRouter = require('./routes/fx');
 const preipoRouter = require('./routes/preipo');
+const tokenizedRouter = require('./routes/tokenized');
+const arbitrageRouter = require('./routes/arbitrage');
 const mcpRouter = require('./routes/mcp');
 
 const app = express();
@@ -161,6 +163,32 @@ try {
           },
           output: { example: { success: true, base_currency: 'USD', as_of: '2025-01-02T18:00:00.000Z', rates: [{ pair: 'USD/EUR', rate: 1.0344, change_1d_pct: 0.125, change_5d_pct: -0.456, as_of: '2025-01-02' }], source: 'FRED / St. Louis Fed' } }
         }}}
+      },
+
+      'GET /x402/market/tokenized': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Tokenized securities prices from CoinGecko. Real-time quotes for tokenized stocks and real-world assets (RWA tokens).',
+        extensions: { bazaar: { info: {
+          description: 'Tokenized securities (xStock) and real-world assets (RWA). Covers tokenized representations of NVIDIA, Tesla, Alphabet, Micron, Circle, and other publicly-traded companies. Updated via CoinGecko API.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { type: 'stocks', limit: '20' },
+            schema: { properties: {
+              type: { type: 'string', description: 'stocks | rwa | all (default: stocks)' },
+              limit: { type: 'integer', description: 'Number of results (1-50, default: 20)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, type: 'stocks', count: 3, tokens: [{ id: 'xstock-nvidia', name: 'NVIDIA xStock', symbol: 'XNVDA', underlying_asset: 'NVIDIA', price_usd: 143.25, market_cap_usd: 2400000000, volume_24h_usd: 15000000, price_change_24h_pct: 1.5, last_updated: '2025-01-02T18:00:00Z' }], source: 'CoinGecko' } }
+        }}}
+      },
+
+      'GET /x402/market/arbitrage': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Real-time arbitrage spreads between tokenized securities and actual stock prices. Identify premium/discount opportunities.',
+        extensions: { bazaar: { info: {
+          description: 'Spot tokenized stock premiums/discounts vs actual NYSE/NASDAQ prices. Tracks NVIDIA, Tesla, Alphabet, Micron, Circle, Strategy tokens vs their underlying equities. Updated via CoinGecko (tokens) + Twelve Data (stocks).',
+          input: { type: 'http', method: 'GET', queryParams: {}, schema: { properties: {}, required: [] } },
+          output: { example: { success: true, as_of: '2025-01-02T18:00:00Z', pairs: [{ token_symbol: 'XNVDA', token_name: 'NVIDIA xStock', token_price_usd: 143.25, stock_ticker: 'NVDA', stock_price_usd: 143.10, premium_pct: 0.10, spread_usd: 0.15, signal: 'FAIR_VALUE', note: 'Tokenized asset may trade at premium/discount due to liquidity, fees, or market structure' }], disclaimer: 'Not financial advice. Spreads may reflect fees, liquidity differences, or fractional denomination.', source: 'CoinGecko + Twelve Data' } }
+        }}}
       }
     },
     x402Server,
@@ -181,5 +209,7 @@ app.use('/x402/market/sentiment', sentimentRouter);
 app.use('/x402/market/earnings', earningsRouter);
 app.use('/x402/market/preipo', preipoRouter);
 app.use('/x402/market/fx', fxRouter);
+app.use('/x402/market/tokenized', tokenizedRouter);
+app.use('/x402/market/arbitrage', arbitrageRouter);
 
 app.listen(PORT, () => console.log(`AgentMarket running on port ${PORT}`));
