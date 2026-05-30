@@ -9,6 +9,10 @@ const { HTTPFacilitatorClient } = require('@x402/core/server');
 const quoteRouter = require('./routes/quote');
 const indicesRouter = require('./routes/indices');
 const holdingsRouter = require('./routes/holdings');
+const fundamentalsRouter = require('./routes/fundamentals');
+const sentimentRouter = require('./routes/sentiment');
+const earningsRouter = require('./routes/earnings');
+const fxRouter = require('./routes/fx');
 const mcpRouter = require('./routes/mcp');
 
 const app = express();
@@ -83,6 +87,68 @@ try {
           },
           output: { example: { success: true, institution_name: 'BERKSHIRE HATHAWAY INC', cik: '1067983', latest_13f_date: '2024-11-14', filing_url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001067983&type=13F', source: 'SEC EDGAR Form 13F' } }
         }}}
+      },
+
+      'GET /x402/market/fundamentals': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Company fundamentals from SEC EDGAR XBRL filings. Revenue, net income, EPS, assets, liabilities, and equity for any publicly-traded company.',
+        extensions: { bazaar: { info: {
+          description: 'SEC EDGAR XBRL company fundamentals. Extracts revenue, net income, EPS, total assets, total liabilities, and equity from the latest 10-K or 10-Q filing.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { ticker: 'AAPL' },
+            schema: { properties: {
+              ticker: { type: 'string', description: 'Stock ticker symbol (default: AAPL)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, ticker: 'AAPL', company_name: 'APPLE INC', cik: '320193', fiscal_year_end: 2024, metrics: { revenue: { value: 383285000000, filed: '2024-10-31', period: '2024-09-28', form: '10-K' }, net_income: { value: 93736000000, filed: '2024-10-31', period: '2024-09-28', form: '10-K' }, eps: { value: 6.05, filed: '2024-10-31', period: '2024-09-28', form: '10-K' }, total_assets: { value: 352755000000, filed: '2024-10-31', period: '2024-09-28', form: '10-K' }, total_liabilities: { value: 120386000000, filed: '2024-10-31', period: '2024-09-28', form: '10-K' }, equity: { value: 232369000000, filed: '2024-10-31', period: '2024-09-28' } }, source: 'SEC EDGAR XBRL' } }
+        }}}
+      },
+
+      'GET /x402/market/sentiment': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Market sentiment indicators: crypto Fear & Greed Index and traditional market VIX volatility.',
+        extensions: { bazaar: { info: {
+          description: 'Market fear and greed sentiment. Crypto F&G from alternative.me (0-100 scale), traditional market VIX from FRED (volatility index).',
+          input: { type: 'http', method: 'GET',
+            queryParams: { type: 'both' },
+            schema: { properties: {
+              type: { type: 'string', description: 'Sentiment type: crypto, market, or both (default: both)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, crypto_fear_greed: { value: 72, label: 'Greed', timestamp: '2025-01-02T18:00:00.000Z', history: [{ value: 72, label: 'Greed', timestamp: '2025-01-02T18:00:00.000Z' }] }, market_vix: { value: 16.13, label: 'Neutral', interpretation: 'Normal market volatility', date: '2025-01-02' }, source: 'Alternative.me (Crypto F&G) / FRED (Market VIX)' } }
+        }}}
+      },
+
+      'GET /x402/market/earnings': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Recent earnings announcements from SEC EDGAR Form 8-K filings. Search by company or get all earnings in past N days.',
+        extensions: { bazaar: { info: {
+          description: 'SEC EDGAR Form 8-K earnings announcements. Default shows earnings from the past 7 days. Filter by ticker for specific company.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { days: '7', ticker: '' },
+            schema: { properties: {
+              days: { type: 'integer', description: 'Lookback days (1-30, default: 7)' },
+              ticker: { type: 'string', description: 'Optional: filter by ticker (e.g. AAPL)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, period_days: 7, count: 42, earnings_reports: [{ company: 'APPLE INC', cik: '320193', filed_date: '2024-10-31', period: '2024-09-28' }], source: 'SEC EDGAR 8-K Filings' } }
+        }}}
+      },
+
+      'GET /x402/market/fx': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Currency exchange rates USD vs major currencies. Historical rates from FRED (St. Louis Federal Reserve).',
+        extensions: { bazaar: { info: {
+          description: 'Foreign exchange rates (USD base). Includes 1-day and 5-day percent changes for major currency pairs (EUR, JPY, GBP, CAD, CHF, INR, BRL, KRW, MXN).',
+          input: { type: 'http', method: 'GET',
+            queryParams: { base: 'USD', pairs: 'EUR,JPY,GBP,CAD,CHF' },
+            schema: { properties: {
+              base: { type: 'string', description: 'Base currency (currently only USD supported)' },
+              pairs: { type: 'string', description: 'Comma-separated currency codes (default: EUR,JPY,GBP,CAD,CHF,INR)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, base_currency: 'USD', as_of: '2025-01-02T18:00:00.000Z', rates: [{ pair: 'USD/EUR', rate: 1.0344, change_1d_pct: 0.125, change_5d_pct: -0.456, as_of: '2025-01-02' }], source: 'FRED / St. Louis Fed' } }
+        }}}
       }
     },
     x402Server,
@@ -98,5 +164,9 @@ try {
 app.use('/x402/market/quote', quoteRouter);
 app.use('/x402/market/indices', indicesRouter);
 app.use('/x402/market/holdings', holdingsRouter);
+app.use('/x402/market/fundamentals', fundamentalsRouter);
+app.use('/x402/market/sentiment', sentimentRouter);
+app.use('/x402/market/earnings', earningsRouter);
+app.use('/x402/market/fx', fxRouter);
 
 app.listen(PORT, () => console.log(`AgentMarket running on port ${PORT}`));
