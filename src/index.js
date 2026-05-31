@@ -20,6 +20,10 @@ const cexArbRouter = require('./routes/cex_arb');
 const stablecoinsRouter = require('./routes/stablecoins');
 const fundingRouter = require('./routes/funding');
 const mcpRouter = require('./routes/mcp');
+const analystRouter = require('./routes/analyst');
+const technicalRouter = require('./routes/technical');
+const calendarRouter = require('./routes/calendar');
+const newsSentimentRouter = require('./routes/news_sentiment');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -235,6 +239,71 @@ try {
           },
           output: { example: { success: true, as_of: '2025-01-02T18:00:00Z', top_positive: [{ symbol: 'BTC_USDT', funding_rate_pct: 0.015, annualized_pct: 16.43, signal: 'BEARISH/SHORT_CROWDED' }], top_negative: [], all_rates: [{ symbol: 'BTC_USDT', funding_rate_pct: 0.015, annualized_pct: 16.43, signal: 'BEARISH/SHORT_CROWDED' }], source: 'Gate.io' } }
         }}}
+      },
+
+      'GET /x402/market/analyst': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Analyst stock ratings and price targets from Finnhub. Consensus recommendations (Strong Buy, Buy, Hold, Sell) with analyst price target distribution.',
+        extensions: { bazaar: { info: {
+          description: 'Analyst consensus ratings and price targets from Finnhub. Aggregates analyst recommendations (Strong Buy, Buy, Hold, Sell, Strong Sell) and provides mean/median/high/low price targets.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { symbol: 'AAPL', limit: '5' },
+            schema: { properties: {
+              symbol: { type: 'string', description: 'Stock ticker symbol (default: AAPL)' },
+              limit: { type: 'integer', description: 'Number of historical periods to return (default: 5)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, symbol: 'AAPL', consensus: { strongBuy: 12, buy: 18, hold: 8, sell: 2, strongSell: 0, total: 40, recommendation: 'BUY' }, price_target: { low: 180.0, mean: 195.5, high: 210.0, median: 195.0 }, history: [], source: 'Finnhub' } }
+        }}}
+      },
+
+      'GET /x402/market/technical': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Technical analysis indicators (RSI, MACD, Bollinger Bands, EMA) from Alpha Vantage. Limited to 25 req/day.',
+        extensions: { bazaar: { info: {
+          description: 'Technical analysis indicators from Alpha Vantage. Includes RSI (with overbought/oversold signals), MACD with trend, Bollinger Bands, and 20-period EMA. 25 requests per day rate limit.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { symbol: 'AAPL', indicators: 'rsi,macd,bbands,ema' },
+            schema: { properties: {
+              symbol: { type: 'string', description: 'Stock ticker symbol (default: AAPL)' },
+              indicators: { type: 'string', description: 'Comma-separated: rsi,macd,bbands,ema (default: all)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, symbol: 'AAPL', as_of: '2025-01-02T18:00:00Z', indicators: { rsi: { value: 65.4, signal: 'NEUTRAL' }, macd: { macd: 2.5, signal: 2.1, histogram: 0.4, trend: 'BULLISH' }, bbands: { upper: 195.8, middle: 190.2, lower: 184.6, pct_b: 62.3 }, ema_20: 189.5 }, source: 'Alpha Vantage' } }
+        }}}
+      },
+
+      'GET /x402/market/calendar': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Economic event calendar from FRED with sector performance from FMP. Upcoming key economic releases.',
+        extensions: { bazaar: { info: {
+          description: 'Economic event calendar from FRED (St. Louis Federal Reserve) with filters by category (Fed, inflation, employment, GDP). Also includes sector performance from FMP.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { days: '14', category: 'all' },
+            schema: { properties: {
+              days: { type: 'integer', description: 'Lookback window in days (1-30, default: 14)' },
+              category: { type: 'string', description: 'Filter: all|fed|inflation|employment|gdp (default: all)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, period_days: 14, upcoming_events: [{ date: '2025-01-03', name: 'ISM Manufacturing PMI', category: 'employment' }], sector_performance: [{ sector: 'Technology', change_pct: 2.15 }], source: 'FRED + FMP' } }
+        }}}
+      },
+
+      'GET /x402/market/news_sentiment': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Financial news with sentiment analysis from Marketaux. Per-symbol sentiment aggregation.',
+        extensions: { bazaar: { info: {
+          description: 'Financial news sentiment from Marketaux. Analyzes news articles for specified symbols (default: AAPL,MSFT,NVDA) and provides BULLISH/BEARISH/NEUTRAL labels based on aggregated sentiment scores.',
+          input: { type: 'http', method: 'GET',
+            queryParams: { symbols: 'AAPL,MSFT,NVDA', limit: '10', sentiment: 'all' },
+            schema: { properties: {
+              symbols: { type: 'string', description: 'Comma-separated tickers (default: AAPL,MSFT,NVDA)' },
+              limit: { type: 'integer', description: 'Number of articles (default: 10, max: 25)' },
+              sentiment: { type: 'string', description: 'Filter: positive|negative|all (default: all)' }
+            }, required: [] }
+          },
+          output: { example: { success: true, symbols: 'AAPL,MSFT,NVDA', article_count: 10, by_symbol: [{ symbol: 'AAPL', avg_sentiment: 0.35, article_count: 4, sentiment_label: 'BULLISH' }], articles: [], source: 'Marketaux' } }
+        }}}
       }
     },
     x402Server,
@@ -260,5 +329,9 @@ app.use('/x402/market/arbitrage', arbitrageRouter);
 app.use('/x402/market/cex_arb', cexArbRouter);
 app.use('/x402/market/stablecoins', stablecoinsRouter);
 app.use('/x402/market/funding', fundingRouter);
+app.use('/x402/market/analyst', analystRouter);
+app.use('/x402/market/technical', technicalRouter);
+app.use('/x402/market/calendar', calendarRouter);
+app.use('/x402/market/news_sentiment', newsSentimentRouter);
 
 app.listen(PORT, () => console.log(`AgentMarket running on port ${PORT}`));
