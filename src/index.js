@@ -24,6 +24,8 @@ const analystRouter = require('./routes/analyst');
 const technicalRouter = require('./routes/technical');
 const calendarRouter = require('./routes/calendar');
 const newsSentimentRouter = require('./routes/news_sentiment');
+const yahooRouter = require('./routes/yahoo');
+const optionsRouter = require('./routes/options');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -142,6 +144,27 @@ try {
             }, required: [] }
           },
           output: { example: { success: true, period_days: 7, count: 42, earnings_reports: [{ company: 'APPLE INC', cik: '320193', filed_date: '2024-10-31', period: '2024-09-28' }], source: 'SEC EDGAR 8-K Filings' } }
+        }}}
+      },
+
+      'GET /x402/market/yahoo': {
+        accepts: [{ scheme: 'exact', price: '$0.001', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Enhanced Yahoo Finance quotes — real-time bid/ask, P/E, 52-week high/low, market cap for any ticker.',
+        extensions: { bazaar: { info: {
+          description: 'Yahoo Finance real-time stock data with bid/ask, P/E ratio, 52-week range, market cap and after-hours pricing.',
+          input: { type: 'http', method: 'GET', queryParams: { symbols: 'AAPL,NVDA,TSLA', type: 'quote' },
+            schema: { properties: { symbols: { type: 'string', description: 'Comma-separated tickers' }, type: { type: 'string', description: 'quote|options|history' } }, required: [] } },
+          output: { example: { success: true, quotes: [{ symbol: 'AAPL', regularMarketPrice: 312.06, bid: 311.98, ask: 312.10, trailingPE: 28.5, marketCap: 4700000000000 }] } }
+        }}}
+      },
+      'GET /x402/market/options': {
+        accepts: [{ scheme: 'exact', price: '$0.005', network: X402_NETWORK, payTo: PAY_TO }],
+        description: 'Stock options chain — calls or puts with strike prices, IV, volume, open interest.',
+        extensions: { bazaar: { info: {
+          description: 'Full options chain for any stock. Calls or puts with strike price, implied volatility, bid/ask, volume, open interest.',
+          input: { type: 'http', method: 'GET', queryParams: { symbol: 'AAPL', type: 'calls', near_money: 'true' },
+            schema: { properties: { symbol: { type: 'string' }, type: { type: 'string', description: 'calls|puts' }, near_money: { type: 'string' } }, required: [] } },
+          output: { example: { success: true, symbol: 'AAPL', options: [{ strike: 310, bid: 5.20, ask: 5.40, impliedVolatility: 0.28, volume: 1842 }] } }
         }}}
       },
 
@@ -322,6 +345,8 @@ app.use('/x402/market/holdings', holdingsRouter);
 app.use('/x402/market/fundamentals', fundamentalsRouter);
 app.use('/x402/market/sentiment', sentimentRouter);
 app.use('/x402/market/earnings', earningsRouter);
+app.use('/x402/market/yahoo', yahooRouter);
+app.use('/x402/market/options', optionsRouter);
 app.use('/x402/market/preipo', preipoRouter);
 app.use('/x402/market/fx', fxRouter);
 app.use('/x402/market/tokenized', tokenizedRouter);
